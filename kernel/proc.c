@@ -106,7 +106,7 @@ allocproc(void)
 {
   struct proc *p;
 
-  for(p = proc; p < &proc[NPROC]; p++) {
+  for(p = proc; p < &proc[NPROC]; p++) { //<----- ovde treba ici sched put
     acquire(&p->lock);
     if(p->state == UNUSED) {
       goto found;
@@ -572,6 +572,7 @@ wakeup(void *chan)
   }
 }
 
+
 // Kill the process with the given pid.
 // The victim won't exit until it tries to return
 // to user space (see usertrap() in trap.c).
@@ -653,4 +654,12 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+int inc_counter(){
+    int ret;
+    acquire(&ptable.lock);
+    ret = ++proc->t_counter;
+    release(&ptable.lock);
+    return ret;
 }
