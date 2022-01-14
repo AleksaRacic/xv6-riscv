@@ -9,7 +9,7 @@
 struct spinlock tickslock;
 uint ticks;
 
-extern int inc_counter();
+extern void update_proc_time();
 extern char trampoline[], uservec[], userret[];
 
 // in kernelvec.S, calls kerneltrap().
@@ -78,8 +78,11 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2 && inc_counter() == KVANT)
-    yield();
+  if(which_dev == 2){
+      printf("\n\nu%d\n",ticks);
+      yield();
+  }
+
 
   usertrapret();
 }
@@ -151,8 +154,12 @@ kerneltrap()
   }
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2 && myproc() != 0 && myproc()->state == RUNNING && inc_counter() == KVANT)
-    yield();
+  if(which_dev == 2 && myproc() != 0 && myproc()->state == RUNNING && myproc()->t_counter >= KVANT){
+      printf("\n\nk%d\n",ticks);
+      yield();
+  }
+
+
 
   // the yield() may have caused some traps to occur,
   // so restore trap registers for use by kernelvec.S's sepc instruction.
@@ -165,6 +172,7 @@ clockintr() //ovde menjati vreme
 {
   acquire(&tickslock);
   ticks++;
+  //update_proc_time();
   wakeup(&ticks);
   release(&tickslock);
 }

@@ -242,6 +242,7 @@ userinit(void)
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
 
+  p->t_counter = 0;
   p->state = RUNNABLE;
 
   release(&p->lock);
@@ -313,6 +314,7 @@ fork(void)
 
   acquire(&np->lock);
   np->state = RUNNABLE;
+  np->t_counter = 0; //see if child inherits parent time
   release(&np->lock);
 
   return pid;
@@ -452,6 +454,7 @@ scheduler(void)
         // to release its lock and then reacquire it
         // before jumping back to us.
         p->state = RUNNING;
+        p->t_counter = 0;
         c->proc = p;
         swtch(&c->context, &p->context);
 
@@ -498,6 +501,7 @@ yield(void)
   struct proc *p = myproc();
   acquire(&p->lock);
   p->state = RUNNABLE;
+  printf("\nyield\n");
   sched();
   release(&p->lock);
 }
@@ -656,10 +660,11 @@ procdump(void)
   }
 }
 
-int inc_counter(){
-    int ret;
-    acquire(&ptable.lock);
-    ret = ++proc->t_counter;
-    release(&ptable.lock);
-    return ret;
+void update_proc_time(){
+    struct proc *p;
+    if ((p = myproc()) != 0) {
+        acquire(&p->lock);
+        ++p->t_counter;
+        release(&p->lock);
+    }
 }
