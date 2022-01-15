@@ -99,8 +99,10 @@ sys_uptime(void)
 uint64
 sys_spolicy(void)
 {
-    int policy;
+    int policy, options;
     if(argint(0, &policy) < 0)
         return -1;
-    return spolicy(policy);
+    if(argint(1, &options) < 0)
+        options = 0;
+    return spolicy(policy, options);
 }

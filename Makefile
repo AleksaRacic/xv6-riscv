@@ -134,6 +134,7 @@ UPROGS=\
 	$U/_zombie\
 	$U/_spolicy_test\
 	$U/_public_test\
+	$U/_spolicy\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)
