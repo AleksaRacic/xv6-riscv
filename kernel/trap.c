@@ -9,7 +9,6 @@
 struct spinlock tickslock;
 uint ticks;
 
-extern void update_proc_time();
 extern char trampoline[], uservec[], userret[];
 
 // in kernelvec.S, calls kerneltrap().
@@ -78,7 +77,7 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2){
+  if(which_dev == 2 && p->t_counter >= KVANT){
       printf("\n\nu%d\n",ticks);
       yield();
   }

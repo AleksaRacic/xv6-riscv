@@ -13,7 +13,7 @@ struct proc proc[NPROC];
 struct proc *initproc;
 
 int nextpid = 1;
-struct spinlock pid_lock;
+struct spinlock pid_lock; //ovo koristi
 
 extern void forkret(void);
 static void freeproc(struct proc *p);
@@ -660,11 +660,26 @@ procdump(void)
   }
 }
 
-void update_proc_time(){
+void update_proc_time(void){
     struct proc *p;
     if ((p = myproc()) != 0) {
         acquire(&p->lock);
         ++p->t_counter;
         release(&p->lock);
     }
+}
+
+int spolicy(int policy){
+    switch (policy) {
+        case 1:
+            printf("1\n");
+            break;
+        case 2:
+            printf("2\n");
+            break;
+        default:
+            printf("lose\n");
+            return -1;
+    }
+    return 0;
 }

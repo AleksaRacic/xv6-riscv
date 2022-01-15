@@ -132,6 +132,7 @@ UPROGS=\
 	$U/_grind\
 	$U/_wc\
 	$U/_zombie\
+	$U/_spolicy_test\
 	$U/_public_test\
 
 fs.img: mkfs/mkfs README $(UPROGS)

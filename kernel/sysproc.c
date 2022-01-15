@@ -95,3 +95,12 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+uint64
+sys_spolicy(void)
+{
+    int policy;
+    if(argint(0, &policy) < 0)
+        return -1;
+    return spolicy(policy);
+}
