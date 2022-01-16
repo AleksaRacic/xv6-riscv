@@ -77,11 +77,16 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(preemtive && which_dev == 2 && p->t_counter != 0 && p->t_counter >= p->burst_time){
-      printf("\n\nu%d\n",ticks);
-      yield();
+  if(preemptive && which_dev == 2){
+      if(policy == 1 && head_SJF != 0 && head_SJF->expected_time < p->expected_time){
+          printf("ut\n");
+          yield();
+      }
+      if(policy == 2 && p->burst_time && p->t_counter >= p->burst_time){
+          printf("ut\n");
+          yield();
+      }
   }
-
 
   usertrapret();
 }
@@ -136,6 +141,7 @@ usertrapret(void)
 void 
 kerneltrap()
 {
+    struct proc *p;
   int which_dev = 0;
   uint64 sepc = r_sepc();
   uint64 sstatus = r_sstatus();
@@ -153,8 +159,16 @@ kerneltrap()
   }
 
   // give up the CPU if this is a timer interrupt.
-  if(preemptive && which_dev == 2 && myproc() != 0 && myproc()->state == RUNNING && myproc()->t_counter != 0 && myproc()->t_counter >= myproc()->burst_time){
-      yield();
+  p = myproc();
+  if(preemptive && which_dev == 2 && p != 0 && p->state == RUNNING){
+      if(policy == 1 && head_SJF != 0 && head_SJF->expected_time < p->expected_time){
+          printf("kt\n");
+          yield();
+      }
+      if(policy == 2 && p->burst_time && p->t_counter >= p->burst_time){
+          printf("kt\n");
+          yield();
+      }
   }
 
 

@@ -10,22 +10,26 @@ struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
 
+struct spinlock head_lock;
 struct proc *head_SJF = 0;
 struct proc *head_CFS = 0;
 
 struct proc *initproc;
 
 int nextpid = 1;
-struct spinlock pid_lock; //ovo koristi
+struct spinlock pid_lock;
+
+//
+int no_proc = 0;
 
 extern void forkret(void);
 static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
 
-int policy = 1;
-int preemptive = 0;
-int alpha[2];
+volatile int policy = 1;
+volatile int preemptive = 0;
+volatile int alpha[2] = {0, 1};
 
 // helps ensure that wakeups of wait()ing
 // parents are not lost. helps obey the
@@ -57,6 +61,7 @@ procinit(void)
   
   initlock(&pid_lock, "nextpid");
   initlock(&wait_lock, "wait_lock");
+  initlock(&head_lock, "head_lock");
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
       p->kstack = KSTACK((int) (p - proc));
@@ -91,6 +96,119 @@ myproc(void) {
   pop_off();
   return p;
 }
+
+
+void
+put(struct proc *p) {
+    p->state = RUNNABLE;
+    p->expected_time =
+            (alpha[0] * p->t_counter) / alpha[1] + p->expected_time - (alpha[0] * p->expected_time) / alpha[1];
+    p->total_burst_time += p->t_counter;
+    p->put_tick = ticks;
+    //printf("put %d %d %d %d %d\n", p->pid, p->put_tick, p->total_burst_time, p->expected_time, p->t_counter);
+    struct proc *cur_proc;
+    struct proc *prev_proc;
+    acquire(&head_lock);
+    no_proc++;
+    if (head_SJF == 0 || head_CFS == 0) {
+        head_SJF = p;
+        head_CFS = p;
+        p->next_SJF = 0;
+        p->next_CFS = 0;
+        p->prev_SJF = 0;
+        p->prev_CFS = 0;
+    } else {
+        cur_proc = head_SJF;
+        prev_proc = 0;
+        while (cur_proc != 0) {
+            if (cur_proc->expected_time > p->expected_time) {
+                break;
+            } else {
+                prev_proc = cur_proc;
+                cur_proc = cur_proc->next_SJF;
+            }
+        }
+        if (prev_proc == 0) {
+            p->prev_SJF = 0;
+            p->next_SJF = head_SJF;
+            head_SJF = p;
+        } else {
+            p->prev_SJF = prev_proc;
+            p->next_SJF = cur_proc;
+            prev_proc->next_SJF = p;
+        }
+
+        cur_proc = head_CFS;
+        prev_proc = 0;
+        while (cur_proc != 0) {
+            if (cur_proc->total_burst_time > p->total_burst_time) {
+                break;
+            } else {
+                prev_proc = cur_proc;
+                cur_proc = cur_proc->next_CFS;
+            }
+        }
+        if (prev_proc == 0) {
+            p->prev_CFS = 0;
+            p->next_CFS = head_SJF;
+            head_SJF = p;
+        } else {
+            p->prev_CFS = prev_proc;
+            p->next_CFS = cur_proc;
+            prev_proc->next_CFS = p;
+        }
+
+    }
+    release(&head_lock);
+}
+
+struct proc* get(){
+    struct proc *p;
+    acquire(&head_lock);
+    switch(policy){
+        case 1:
+            if(head_SJF){
+                acquire(&head_SJF->lock);
+                p = head_SJF;
+                head_SJF = head_SJF->next_SJF;
+                if(p->next_CFS != 0) p->next_CFS->prev_CFS = p->prev_CFS;
+                if(p->prev_CFS == 0) head_CFS = p->next_CFS;
+                else p->prev_CFS->next_CFS = p->next_CFS;
+                no_proc--;
+                release(&head_lock);
+
+                p->burst_time = 0;
+                return p;
+            }else{
+                release(&head_lock);
+                return 0;
+            }
+            break;
+        case 2:
+            if(head_CFS){
+                acquire(&head_CFS->lock);
+                p = head_CFS;
+                head_CFS = head_CFS->next_CFS;
+                if(p->next_SJF != 0) p->next_SJF->prev_SJF = p->prev_SJF;
+
+                if(p->prev_SJF == 0) head_SJF = p->next_SJF;
+                else p->prev_SJF->next_SJF = p->next_SJF;
+                no_proc--;
+                release(&head_lock);
+
+                p->burst_time = ticks - p->put_tick;
+                return p;
+            }else{
+                release(&head_lock);
+                return 0;
+            }
+            break;
+        default:
+            return 0;
+            break;
+    }
+}
+
 
 int
 allocpid() {
@@ -147,7 +265,9 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
-
+  p->t_counter = 0;
+  p->total_burst_time = 0;
+  p->expected_time = 0;
   return p;
 }
 
@@ -171,6 +291,11 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+  p->t_counter = 0;
+  p->total_burst_time = 0;
+  p->expected_time =0;
+  p->next_SJF = 0;
+  p->next_CFS = 0;
 }
 
 // Create a user page table for a given process,
@@ -248,10 +373,8 @@ userinit(void)
 
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
-
-  p->t_counter = 0;
-  p->total_burst_time = 0;
-  p->state = RUNNABLE;
+  //printf("uip\n");
+  put(p);
 
   release(&p->lock);
 }
@@ -321,9 +444,9 @@ fork(void)
   release(&wait_lock);
 
   acquire(&np->lock);
-  //TODO ovde ide put --------------------------------------
-  np->state = RUNNABLE;
-  np->t_counter = 0; //see if child inherits parent time
+
+  put(np);
+
   release(&np->lock);
 
   return pid;
@@ -438,92 +561,6 @@ wait(uint64 addr)
   }
 }
 
-void
-put(struct proc *p) {
-    //videti da li treba lock
-    p->expected_time =
-            (alpha[0] * p->t_counter) / alpha[1] + (p->expected_time - (alpha[0] * p->expected_time) / alpha[1]);
-    p->total_burst_time += p->t_counter;
-    p->put_tick = ticks;
-    p->state = RUNNABLE;
-
-    struct proc *cur_proc;
-    struct proc *prev_proc;
-
-    if (head_SJF == 0 || head_SJF == 0) {
-        head_SJF = head_SJF = p;
-        p->next_SJF = p->next_CFS = 0;
-    } else {
-        cur_proc = head_SJF;
-        prev_proc = 0;
-        while (cur_proc != 0) {
-            if (cur_proc->expected_time > p->expected_time) {
-                break;
-            } else {
-                prev_proc = cur_proc;
-                cur_proc = cur_proc->next_SJF;
-            }
-        }
-        if (prev_proc == 0) {
-            p->next_SJF = head_SJF;
-            head_SJF = p;
-        } else {
-            p->next_SJF = cur_proc;
-            prev_proc->next_SJF = p;
-        }
-
-        cur_proc = head_CFS;
-        prev_proc = 0;
-        while (cur_proc != 0) {
-            if (cur_proc->total_burst_time > p->total_burst_time) {
-                break;
-            } else {
-                prev_proc = cur_proc;
-                cur_proc = cur_proc->next_CFS;
-            }
-        }
-        if (prev_proc == 0) {
-            p->next_CFS = head_SJF;
-            head_SJF = p;
-        } else {
-            p->next_CFS = cur_proc;
-            prev_proc->next_CFS = p;
-        }
-
-    }
-}
-
-struct proc* get(){
-    struct proc *p;
-    swtch(policy){
-        case 1:
-            if(head_SJF){
-                acquire(&head_SJF->lock);
-                p = head_SJF;
-                head_SJF = head_SJF->next_SJF;
-                p->burst_time = 0;
-                return p;
-            }else{
-                return 0;
-            }
-            break;
-        case 2:
-            if(head_CFS){
-                acquire(&head_CFS->lock);
-                p = head_CFS;
-                head_CFS = head_CFS->next_CFS;
-                p->burst_time = ticks - p->put_tick;
-                return p;
-            }else{
-                return 0;
-            }
-            break;
-        default:
-            return 0;
-            break;
-    }
-}
-
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
 // Scheduler never returns.  It loops, doing:
@@ -541,14 +578,13 @@ scheduler(void)
   for(;;){
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
-
-    p = get();
-    p->state = RUNNING;
-    p->t_counter = 0;
-    c->proc = p;
-    swtch(&c->context, &p->context);
-    c->proc = 0;
-    release(&p->lock);
+    if((p = get()) != 0){
+        p->state = RUNNING;
+        p->t_counter = 0;
+        c->proc = p;
+        swtch(&c->context, &p->context);
+        c->proc = 0;
+        release(&p->lock);
     }
   }
 }
@@ -587,8 +623,6 @@ yield(void)
   struct proc *p = myproc();
   acquire(&p->lock);
   put(p);
-  //ovde ide put
-  printf("\nyield\n");
   sched();
   release(&p->lock);
 }
@@ -656,7 +690,8 @@ wakeup(void *chan)
     if(p != myproc()){
       acquire(&p->lock);
       if(p->state == SLEEPING && p->chan == chan) {
-        p->state = RUNNABLE;
+          p->total_burst_time = 0;
+          put(p);
       }
       release(&p->lock);
     }
@@ -678,7 +713,7 @@ kill(int pid)
       p->killed = 1;
       if(p->state == SLEEPING){
         // Wake process from sleep().
-        p->state = RUNNABLE;
+        put(p);
       }
       release(&p->lock);
       return 0;
@@ -756,21 +791,28 @@ void update_proc_time(void){
     }
 }
 
-int spolicy(int policy, int options){
-    switch (policy) {
+int spolicy(int policy_, int options){
+    int pow;
+    switch (policy_) {
         case 1:
             policy = 1;
             if(options != 0){
                 preemptive = options & 1;
                 alpha[0] = (options & 0xFF0000)>>16;
-                if((alpha[1] = (options & 0xFF00)>>8) == 0) alpha[1] = 1 ;
+                pow = (options & 0xFF00)>>8;
+                alpha[1] = 1;
+                while(pow){
+                    alpha[1] *= 10;
+                    pow--;
+                }
             }
             break;
         case 2:
             policy = 2;
+            preemptive = 1;
             break;
         default:
-            printf("lose\n");
+            panic("spolicy");
             return -1;
     }
     return 0;

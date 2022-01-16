@@ -114,4 +114,6 @@ struct proc {
   //queuing
   struct proc *next_SJF;
   struct proc *next_CFS;
+  struct proc *prev_SJF;
+  struct proc *prev_CFS;
 };

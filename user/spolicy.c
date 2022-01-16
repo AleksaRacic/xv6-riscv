@@ -17,11 +17,9 @@ int main(int argc, char *argv[])
         switch (i) {
             case 1:
                 policy = atoi(argv[i]);
-                printf("%d\n", policy);
                 break;
             case 2:
                 preemptive = atoi(argv[i]);
-                printf("%d\n", preemptive);
                 break;
             case 3:
                 if(strlen(argv[3]) == 1){
@@ -29,19 +27,15 @@ int main(int argc, char *argv[])
                     alpha[1] = 1;
                 }else{
                     alpha[0] = atoi(argv[3] + 2);
-                    alpha[1] = strlen(argv[3] + 1);
+                    alpha[1] = strlen(argv[3] + 2);
                 }
-                printf("%d %d\n", alpha[0], alpha[1]);
                 options = (alpha[0]<<8) + alpha[1];
-                printf("%d\n", options);
                 options = (options<<8) + preemptive;
-                printf("%d\n", options);
                 break;
             default:
                 break;
         }
     }
-    printf("Calling spolicy \n");
     spolicy(policy, options);
     exit(0);
 }
