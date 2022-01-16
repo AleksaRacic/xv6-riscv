@@ -77,7 +77,7 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2 && p->t_counter >= KVANT){
+  if(preemtive && which_dev == 2 && p->t_counter != 0 && p->t_counter >= p->burst_time){
       printf("\n\nu%d\n",ticks);
       yield();
   }
@@ -153,8 +153,7 @@ kerneltrap()
   }
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2 && myproc() != 0 && myproc()->state == RUNNING && myproc()->t_counter >= KVANT){
-      printf("\n\nk%d\n",ticks);
+  if(preemptive && which_dev == 2 && myproc() != 0 && myproc()->state == RUNNING && myproc()->t_counter != 0 && myproc()->t_counter >= myproc()->burst_time){
       yield();
   }
 
@@ -171,7 +170,7 @@ clockintr() //ovde menjati vreme
 {
   acquire(&tickslock);
   ticks++;
-  //update_proc_time();
+  update_proc_time();
   wakeup(&ticks);
   release(&tickslock);
 }

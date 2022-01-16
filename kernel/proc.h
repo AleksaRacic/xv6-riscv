@@ -106,4 +106,12 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
   int t_counter;               //tick counter
+  int put_tick;                 //tick when the proc was added to queue
+  int burst_time;                //CPU burst allowed time
+  int total_burst_time;         //total process cpu burst time
+  int expected_time;            //process expected time to run
+
+  //queuing
+  struct proc *next_SJF;
+  struct proc *next_CFS;
 };

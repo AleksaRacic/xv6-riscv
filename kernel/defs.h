@@ -106,6 +106,7 @@ int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void            procdump(void);
 void            update_proc_time(void);
 int             spolicy(int, int);
+extern int      preemptive;
 
 // swtch.S
 void            swtch(struct context*, struct context*);

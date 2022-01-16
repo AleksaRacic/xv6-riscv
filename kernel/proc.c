@@ -10,6 +10,9 @@ struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
 
+struct proc *head_SJF = 0;
+struct proc *head_CFS = 0;
+
 struct proc *initproc;
 
 int nextpid = 1;
@@ -19,6 +22,10 @@ extern void forkret(void);
 static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
+
+int policy = 1;
+int preemptive = 0;
+int alpha[2];
 
 // helps ensure that wakeups of wait()ing
 // parents are not lost. helps obey the
@@ -106,7 +113,7 @@ allocproc(void)
 {
   struct proc *p;
 
-  for(p = proc; p < &proc[NPROC]; p++) { //<----- ovde treba ici sched put
+  for(p = proc; p < &proc[NPROC]; p++) {
     acquire(&p->lock);
     if(p->state == UNUSED) {
       goto found;
@@ -243,6 +250,7 @@ userinit(void)
   p->cwd = namei("/");
 
   p->t_counter = 0;
+  p->total_burst_time = 0;
   p->state = RUNNABLE;
 
   release(&p->lock);
@@ -313,6 +321,7 @@ fork(void)
   release(&wait_lock);
 
   acquire(&np->lock);
+  //TODO ovde ide put --------------------------------------
   np->state = RUNNABLE;
   np->t_counter = 0; //see if child inherits parent time
   release(&np->lock);
@@ -429,6 +438,92 @@ wait(uint64 addr)
   }
 }
 
+void
+put(struct proc *p) {
+    //videti da li treba lock
+    p->expected_time =
+            (alpha[0] * p->t_counter) / alpha[1] + (p->expected_time - (alpha[0] * p->expected_time) / alpha[1]);
+    p->total_burst_time += p->t_counter;
+    p->put_tick = ticks;
+    p->state = RUNNABLE;
+
+    struct proc *cur_proc;
+    struct proc *prev_proc;
+
+    if (head_SJF == 0 || head_SJF == 0) {
+        head_SJF = head_SJF = p;
+        p->next_SJF = p->next_CFS = 0;
+    } else {
+        cur_proc = head_SJF;
+        prev_proc = 0;
+        while (cur_proc != 0) {
+            if (cur_proc->expected_time > p->expected_time) {
+                break;
+            } else {
+                prev_proc = cur_proc;
+                cur_proc = cur_proc->next_SJF;
+            }
+        }
+        if (prev_proc == 0) {
+            p->next_SJF = head_SJF;
+            head_SJF = p;
+        } else {
+            p->next_SJF = cur_proc;
+            prev_proc->next_SJF = p;
+        }
+
+        cur_proc = head_CFS;
+        prev_proc = 0;
+        while (cur_proc != 0) {
+            if (cur_proc->total_burst_time > p->total_burst_time) {
+                break;
+            } else {
+                prev_proc = cur_proc;
+                cur_proc = cur_proc->next_CFS;
+            }
+        }
+        if (prev_proc == 0) {
+            p->next_CFS = head_SJF;
+            head_SJF = p;
+        } else {
+            p->next_CFS = cur_proc;
+            prev_proc->next_CFS = p;
+        }
+
+    }
+}
+
+struct proc* get(){
+    struct proc *p;
+    swtch(policy){
+        case 1:
+            if(head_SJF){
+                acquire(&head_SJF->lock);
+                p = head_SJF;
+                head_SJF = head_SJF->next_SJF;
+                p->burst_time = 0;
+                return p;
+            }else{
+                return 0;
+            }
+            break;
+        case 2:
+            if(head_CFS){
+                acquire(&head_CFS->lock);
+                p = head_CFS;
+                head_CFS = head_CFS->next_CFS;
+                p->burst_time = ticks - p->put_tick;
+                return p;
+            }else{
+                return 0;
+            }
+            break;
+        default:
+            return 0;
+            break;
+    }
+}
+
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
 // Scheduler never returns.  It loops, doing:
@@ -447,22 +542,13 @@ scheduler(void)
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
 
-    for(p = proc; p < &proc[NPROC]; p++) {
-      acquire(&p->lock);
-      if(p->state == RUNNABLE) {
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
-        p->state = RUNNING;
-        p->t_counter = 0;
-        c->proc = p;
-        swtch(&c->context, &p->context);
-
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
-      }
-      release(&p->lock);
+    p = get();
+    p->state = RUNNING;
+    p->t_counter = 0;
+    c->proc = p;
+    swtch(&c->context, &p->context);
+    c->proc = 0;
+    release(&p->lock);
     }
   }
 }
@@ -500,7 +586,8 @@ yield(void)
 {
   struct proc *p = myproc();
   acquire(&p->lock);
-  p->state = RUNNABLE;
+  put(p);
+  //ovde ide put
   printf("\nyield\n");
   sched();
   release(&p->lock);
@@ -669,13 +756,18 @@ void update_proc_time(void){
     }
 }
 
-int spolicy(int policy){
+int spolicy(int policy, int options){
     switch (policy) {
         case 1:
-            printf("1\n");
+            policy = 1;
+            if(options != 0){
+                preemptive = options & 1;
+                alpha[0] = (options & 0xFF0000)>>16;
+                if((alpha[1] = (options & 0xFF00)>>8) == 0) alpha[1] = 1 ;
+            }
             break;
         case 2:
-            printf("2\n");
+            policy = 2;
             break;
         default:
             printf("lose\n");
