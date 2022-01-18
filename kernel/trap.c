@@ -79,11 +79,9 @@ usertrap(void)
   // give up the CPU if this is a timer interrupt.
   if(preemptive && which_dev == 2){
       if(policy == 1 && head_SJF != 0 && head_SJF->expected_time < p->expected_time){
-          printf("ut\n");
           yield();
       }
       if(policy == 2 && p->burst_time && p->t_counter >= p->burst_time){
-          printf("ut\n");
           yield();
       }
   }
@@ -162,11 +160,9 @@ kerneltrap()
   p = myproc();
   if(preemptive && which_dev == 2 && p != 0 && p->state == RUNNING){
       if(policy == 1 && head_SJF != 0 && head_SJF->expected_time < p->expected_time){
-          printf("kt\n");
           yield();
       }
       if(policy == 2 && p->burst_time && p->t_counter >= p->burst_time){
-          printf("kt\n");
           yield();
       }
   }

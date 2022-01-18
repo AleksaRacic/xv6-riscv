@@ -100,16 +100,17 @@ myproc(void) {
 
 void
 put(struct proc *p) {
+
+    //Updating proc status
     p->state = RUNNABLE;
     p->expected_time =
             (alpha[0] * p->t_counter) / alpha[1] + p->expected_time - (alpha[0] * p->expected_time) / alpha[1];
     p->total_burst_time += p->t_counter;
     p->put_tick = ticks;
-    //printf("put %d %d %d %d %d\n", p->pid, p->put_tick, p->total_burst_time, p->expected_time, p->t_counter);
+
     struct proc *cur_proc;
     struct proc *prev_proc;
     acquire(&head_lock);
-    no_proc++;
     if (head_SJF == 0 || head_CFS == 0) {
         head_SJF = p;
         head_CFS = p;
@@ -163,7 +164,7 @@ put(struct proc *p) {
 }
 
 struct proc* get(){
-    struct proc *p;
+    struct proc *p = 0;
     acquire(&head_lock);
     switch(policy){
         case 1:
@@ -174,14 +175,7 @@ struct proc* get(){
                 if(p->next_CFS != 0) p->next_CFS->prev_CFS = p->prev_CFS;
                 if(p->prev_CFS == 0) head_CFS = p->next_CFS;
                 else p->prev_CFS->next_CFS = p->next_CFS;
-                no_proc--;
-                release(&head_lock);
-
                 p->burst_time = 0;
-                return p;
-            }else{
-                release(&head_lock);
-                return 0;
             }
             break;
         case 2:
@@ -190,23 +184,16 @@ struct proc* get(){
                 p = head_CFS;
                 head_CFS = head_CFS->next_CFS;
                 if(p->next_SJF != 0) p->next_SJF->prev_SJF = p->prev_SJF;
-
                 if(p->prev_SJF == 0) head_SJF = p->next_SJF;
                 else p->prev_SJF->next_SJF = p->next_SJF;
-                no_proc--;
-                release(&head_lock);
-
                 p->burst_time = ticks - p->put_tick;
-                return p;
-            }else{
-                release(&head_lock);
-                return 0;
             }
             break;
         default:
-            return 0;
             break;
     }
+    release(&head_lock);
+    return p;
 }
 
 
@@ -373,7 +360,7 @@ userinit(void)
 
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
-  //printf("uip\n");
+
   put(p);
 
   release(&p->lock);
